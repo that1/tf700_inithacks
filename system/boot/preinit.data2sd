@@ -1,0 +1,12 @@
+#!/system/bin/sh
+
+# preinit: only /sys and /system are mounted (ro), / is still rw
+
+PATH=/sbin:/system/bin:/system/xbin
+
+# auto-detect data2sd
+if [ -d /sys/block/mmcblk1/mmcblk1p2 ]; then
+  echo "system/boot/preinit: mmcblk1p2 detected, setting up for Data2SD."
+  cp /system/boot/fstab.cardhu.data2sd /fstab.cardhu
+  cp /system/boot/init.cardhu.rc.data2sd /init.cardhu.rc
+fi

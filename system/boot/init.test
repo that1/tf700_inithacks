@@ -1,0 +1,33 @@
+#!/system/bin/sh
+
+# init: only /sys and /system are mounted (ro), / is still rw
+
+PATH=/sbin:/system/bin:/system/xbin
+
+# swap inits (and make ueventd link point to correct target)
+mv /init /init-chainload
+mv /init-android /init
+
+# TODO: make adbd work (set USB IDs, enable USB, do some magic)
+#/sbin/adbd &
+
+if [ "$(cat /sys/class/switch/dock/state)" == "10" ]; then
+	# docked - enter pre-init shell
+
+	mount -t proc proc /proc
+
+	# populate /dev
+	/sbin/ueventd &
+	sleep 1
+
+	/system/bin/sh
+	
+	# will be restarted by init
+	killall ueventd
+fi
+
+# unbind console to avoid crash when the console is blanked while Android is running
+echo 0 > /sys/class/vtconsole/vtcon1/bind
+
+# unmount /system and start real init
+exec /init-chainload $*
