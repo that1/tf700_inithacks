@@ -1,9 +1,10 @@
-// init.c - detect storage and run real init
+// init.c - pre-init for Android
 
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -34,63 +35,62 @@ void klog_init(void)
 
 #define PREINIT_SYSTEM_DEVNAME "/dev/mmcblk0p1"
 
-int find_preinit()
+void mount_system()
 {
 	int fd, major, minor;
 	char buf[16];
-	struct stat s;
 
 	fd = open("/sys/block/mmcblk0/mmcblk0p1/dev", O_RDONLY);
-	if (fd) {
-		if (read(fd, buf, sizeof(buf)) <= 0) {
-			KLOG("<4>preinit: can't read /sys/block/mmcblk0/mmcblk0p1/dev");
-			return;
-		}
-		close(fd);
-		if (sscanf(buf, "%d:%d", &major, &minor) != 2) {
-			KLOG("<4>preinit: failed to parse /sys/block/mmcblk0/mmcblk0p1/dev");
-			return;
-		}
-		if (mknod(PREINIT_SYSTEM_DEVNAME, S_IFBLK | 0600, makedev(major, minor)) != 0) {
-			KLOG("<4>preinit: mknod " PREINIT_SYSTEM_DEVNAME " failed");
-			return;
-		}
-		if (mount(PREINIT_SYSTEM_DEVNAME, "/system", "ext4", MS_RDONLY, NULL) != 0) {
-			KLOG("<4>preinit: mount " PREINIT_SYSTEM_DEVNAME " failed");
-			return;
-		}
-		if (stat("/system/boot/preinit", &s) == 0) {
-			KLOG("<6>preinit: found /system/boot/preinit");
-			return 1;
-		}
+	if (fd == -1) {
+		KLOG("<3>preinit: open /sys/block/mmcblk0/mmcblk0p1/dev failed");
+		return;
 	}
-	return 0;
+	if (read(fd, buf, sizeof(buf)) <= 0) {
+		KLOG("<3>preinit: read /sys/block/mmcblk0/mmcblk0p1/dev failed");
+		return;
+	}
+	close(fd);
+	if (sscanf(buf, "%d:%d", &major, &minor) != 2) {
+		KLOG("<3>preinit: parsing /sys/block/mmcblk0/mmcblk0p1/dev failed");
+		return;
+	}
+	if (mknod(PREINIT_SYSTEM_DEVNAME, S_IFBLK | 0600, makedev(major, minor)) != 0) {
+		KLOG("<3>preinit: mknod " PREINIT_SYSTEM_DEVNAME " failed");
+		return;
+	}
+	if (mount(PREINIT_SYSTEM_DEVNAME, "/system", "ext4", MS_RDONLY, NULL) != 0) {
+		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVNAME " failed");
+		return;
+	}
 }
 
-void detect_data2sd()
+void unmount_system()
 {
-	int rc;
-	struct stat s;
+	umount("/system");
+	unlink(PREINIT_SYSTEM_DEVNAME);
+}
 
-	rc = stat("/sys/block/mmcblk1/mmcblk1p2", &s);
-	if (rc == 0) {
-		KLOG("<6>preinit: mmcblk1p2 detected, setting up for data2sd");
-//		umount("/data");
-		rename("fstab.cardhu.data2sd", "fstab.cardhu");
-		rename("init.cardhu.rc.data2sd", "init.cardhu.rc");
-	} else {
-		KLOG("<6>preinit: mmcblk1p2 not detected, setting up for internal storage");
-//		printf("stat returned errno %d\n", errno);
-//		sleep(5);
-		unlink("fstab.cardhu.data2sd");
-		unlink("init.cardhu.rc.data2sd");
+void unbind_fbcon()
+{
+	int fd;
+	fd = open("/sys/class/vtconsole/vtcon1/bind", O_WRONLY);
+	if (fd != -1) {
+		write(fd, "0", 1);
+		close(fd);
 	}
 }
+
 
 int main(int argc, char *argv[], char *envp[])
 {
 	int rc;
+	struct stat s;
 	char buf[80];
+
+	if (strcmp(argv[0], "/init-chainload") == 0) {
+		argv[0] = "/init";
+		goto chainload;
+	}
 /*
 	printf("hello world, this is that-init. my pid = %d\n", getpid());
 	int fd = open("log.txt", O_WRONLY | O_CREAT, 0600);
@@ -102,24 +102,50 @@ int main(int argc, char *argv[], char *envp[])
 	mount("sysfs", "/sys", "sysfs", 0, NULL);
 	klog_init();
 	
+	KLOG("<2>preinit: ########## starting ##########");
+
+	mount_system();
+
+	// a fully custom init can take over if it exists
+	if (stat("/system/boot/init", &s) == 0) {
+		KLOG("<2>preinit: starting /system/boot/init");
+		// if this works, it takes over from here and execve never returns.
+		// if custom init wants to boot Android, it must unmount /system or modify init.rc scripts/fstab accordingly
+		rc = execve("/system/boot/init", argv, envp);
+		sprintf(buf, "<2>preinit: execve /system/boot/init failed: rc=%d errno=%d, resuming default boot.", rc, errno);
+		KLOG(buf);
+	}
+
+	// no custom init, so we're still in charge - boot Android
+
 	// this rename is essential, or the symlink sbin/ueventd must be changed!
 	rename("init-android", "init");
 
-	if (find_preinit()) {
-		// if this works, it takes over from here and execve never returns.
-		// preinit must modify the root fs as it likes, unmount /system and unlink PREINIT_SYSTEM_DEVNAME, finally execve /init
-		rc = execve("/system/boot/preinit", argv, envp);
-		// otherwise, we continue with standard boot:
-		sprintf(buf, "<4>preinit: execve /system/boot/preinit failed: rc=%d errno=%d ", rc, errno);
-		KLOG(buf);
+	// run pre-init hook as child and wait
+	if (stat("/system/boot/preinit", &s) == 0) {
+		KLOG("<2>preinit: starting /system/boot/preinit");
+		int pid = fork();
+		if (pid == 0) {
+			rc = execve("/system/boot/preinit", argv, envp);
+			sprintf(buf, "<2>preinit: execve /system/boot/preinit failed: rc=%d errno=%d, resuming default boot.", rc, errno);
+			KLOG(buf);
+			return 42;
+		} else if (pid == -1) {
+			sprintf(buf, "<2>preinit: fork failed: errno=%d, resuming default boot.", errno);
+			KLOG(buf);
+		} else {
+			wait(&rc);
+			sprintf(buf, "<6>preinit: /system/boot/preinit exit status=%d", rc);
+			KLOG(buf);
+		}
 	}
-	
-	// but first clean up the mess we made :)
-	umount("/system");
-	unlink(PREINIT_SYSTEM_DEVNAME);
 
-	// TODO: move this stuff to preinit so users can opt out from auto-detection
-	detect_data2sd();
+	// unbind fb console to avoid crash when the console is blanked while Android is running
+	unbind_fbcon();
+
+chainload:
+	// but first clean up the mess we made, otherwise "mount_all" in real init fails
+	unmount_system();
 
 	rc = execve("/init", argv, envp);
 
@@ -127,4 +153,3 @@ int main(int argc, char *argv[], char *envp[])
 	sleep(5);
 	return 0;
 }
-
