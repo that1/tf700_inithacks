@@ -75,11 +75,20 @@ void unbind_fbcon()
 	int fd;
 	fd = open("/sys/class/vtconsole/vtcon1/bind", O_WRONLY);
 	if (fd != -1) {
-		write(fd, "0", 1);
-		close(fd);
+	    write(fd, "0", 1);
+	    close(fd);
 	}
 }
 
+void enable_verbose_printk()
+{
+	int fd;
+	fd = open("/proc/sys/kernel/printk", O_WRONLY);
+	if (fd != -1) {
+	    write(fd, "7", 1);
+	    close(fd);
+	}
+}
 
 int main(int argc, char *argv[], char *envp[])
 {
@@ -142,6 +151,8 @@ int main(int argc, char *argv[], char *envp[])
 
 	// unbind fb console to avoid crash when the console is blanked while Android is running
 	unbind_fbcon();
+	// and re-enable verbose printk for ram_console (/proc/last_kmsg)
+	enable_verbose_printk();
 
 chainload:
 	// but first clean up the mess we made, otherwise "mount_all" in real init fails
