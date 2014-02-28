@@ -75,8 +75,8 @@ void unbind_fbcon()
 	int fd;
 	fd = open("/sys/class/vtconsole/vtcon1/bind", O_WRONLY);
 	if (fd != -1) {
-	    write(fd, "0", 1);
-	    close(fd);
+		write(fd, "0", 1);
+		close(fd);
 	}
 }
 
@@ -85,8 +85,9 @@ void enable_verbose_printk()
 	int fd;
 	fd = open("/proc/sys/kernel/printk", O_WRONLY);
 	if (fd != -1) {
-	    write(fd, "7", 1);
-	    close(fd);
+		write(fd, "7", 1);
+		close(fd);
+		KLOG("<7>preinit: verbose printk re-enabled.");
 	}
 }
 
@@ -108,6 +109,7 @@ int main(int argc, char *argv[], char *envp[])
 		close(fd);
 	}
 */
+	mount("proc", "/proc", "proc", 0, NULL);
 	mount("sysfs", "/sys", "sysfs", 0, NULL);
 	klog_init();
 	
