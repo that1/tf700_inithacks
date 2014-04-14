@@ -1,5 +1,3 @@
-arm-linux-androideabi-gcc-4.8 --sysroot=/opt/android-ndk/platforms/android-14/arch-arm/ -static init.c -o init -Wall
-arm-linux-androideabi-strip init
+arm-linux-androideabi-gcc-4.8 --sysroot=/opt/android-ndk/platforms/android-14/arch-arm/ -static -s -o init -Wall init.c
 
-#gcc -static init.c -o init
-#strip init
+#gcc -static -o init -Wall init.c
