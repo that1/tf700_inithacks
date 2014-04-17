@@ -95,7 +95,7 @@ int main(int argc, char *argv[], char *envp[])
 {
 	int rc;
 	struct stat s;
-	char buf[80];
+	char buf[160];
 
 	if (strcmp(argv[0], "/init-chainload") == 0) {
 		argv[0] = "/init";
