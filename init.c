@@ -35,8 +35,14 @@ void klog_init(void)
 
 #define PREINIT_SYSTEM_DEVNAME "/dev/mmcblk0p1"
 
+#define DETECTED_UNKNOWN 0
+#define DETECTED_EXT4 1
+#define DETECTED_F2FS 2
+
 void mount_system()
 {
+/*
+ * this stuff is not needed anymore with CONFIG_DEVTMPFS:
 	int fd, major, minor;
 	char buf[16];
 
@@ -58,6 +64,7 @@ void mount_system()
 		KLOG("<3>preinit: mknod " PREINIT_SYSTEM_DEVNAME " failed\n");
 		return;
 	}
+*/
 	if (mount(PREINIT_SYSTEM_DEVNAME, "/system", "ext4", MS_RDONLY, NULL) != 0) {
 		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVNAME " failed\n");
 		return;
@@ -67,7 +74,7 @@ void mount_system()
 void unmount_system()
 {
 	umount("/system");
-	unlink(PREINIT_SYSTEM_DEVNAME);
+//	unlink(PREINIT_SYSTEM_DEVNAME);
 }
 
 void unbind_fbcon()
@@ -91,6 +98,73 @@ void enable_verbose_printk()
 	}
 }
 
+int detect_filesystem(char *devname)
+{
+	char buf[2048];
+	int fd;
+
+	fd = open(devname, O_RDONLY);
+	if (fd == -1)
+		return -errno;
+
+	memset(buf, 0, sizeof(buf));
+	if (!read(fd, buf, sizeof(buf)))
+	{
+		close(fd);
+		return -errno;
+	}
+	close(fd);
+
+	if (!memcmp(buf+1024+0x38, "\x53\xef", 2))
+		return DETECTED_EXT4;
+
+	if (!memcmp(buf+1024, "\x10\x20\xf5\xf2", 4))
+		return DETECTED_F2FS;
+
+	return DETECTED_UNKNOWN;
+}
+
+void print_detect_filesystem(char *devname, char *name)
+{
+	int result;
+	char buf[160];
+
+	result = detect_filesystem(devname);
+	switch (result)
+	{
+		case DETECTED_EXT4:
+			strcpy(buf, "ext4");
+			break;
+
+		case DETECTED_F2FS:
+			strcpy(buf, "f2fs");
+			break;
+
+		case DETECTED_UNKNOWN:
+			strcpy(buf, "unknown filesystem");
+			break;
+
+		case -ENOENT:
+			strcpy(buf, "not present");
+			break;
+
+		default:
+			sprintf(buf, "error %d", -result);
+			break;
+	}
+
+	printf("%-16s %-50s -> %s\n", devname, name, buf);
+}
+
+void print_detected_filesystems()
+{
+	printf("\n\nDetecting filesystems...\n");
+	print_detect_filesystem("/dev/mmcblk0p8", "internal /data (UDA)");
+	print_detect_filesystem("/dev/mmcblk1p2", "external /data on microSD (for Data2SD/ROM2SD)");
+	print_detect_filesystem("/dev/mmcblk1p3", "external /system on microSD (for ROM2SD)");
+	printf("\n\n");
+}
+
 int main(int argc, char *argv[], char *envp[])
 {
 	int rc;
@@ -111,8 +185,9 @@ int main(int argc, char *argv[], char *envp[])
 */
 	mount("proc", "/proc", "proc", 0, NULL);
 	mount("sysfs", "/sys", "sysfs", 0, NULL);
+	mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
 	klog_init();
-	
+
 	KLOG("<2>preinit: ########## starting ##########\n");
 
 	mount_system();
@@ -121,7 +196,7 @@ int main(int argc, char *argv[], char *envp[])
 	if (stat("/system/boot/init", &s) == 0) {
 		KLOG("<2>preinit: starting /system/boot/init\n");
 		// if this works, it takes over from here and execve never returns.
-		// if custom init wants to boot Android, it must unmount /system or modify init.rc scripts/fstab accordingly
+		// if custom init wants to boot Android, it must unmount /system and /dev or modify init.rc scripts/fstab accordingly
 		rc = execve("/system/boot/init", argv, envp);
 		sprintf(buf, "<2>preinit: execve /system/boot/init failed: rc=%d errno=%d, resuming default boot.\n", rc, errno);
 		KLOG(buf);
@@ -131,6 +206,10 @@ int main(int argc, char *argv[], char *envp[])
 
 	// this rename is essential, or the symlink sbin/ueventd must be changed!
 	rename("init-android", "init");
+
+	// TODO: detect partition types and switch ramdisk contents accordingly
+	print_detected_filesystems();
+	// TODO: detect ROM type by parsing build.prop
 
 	// run pre-init hook as child and wait
 	if (stat("/system/boot/preinit", &s) == 0) {
@@ -159,6 +238,7 @@ int main(int argc, char *argv[], char *envp[])
 chainload:
 	// but first clean up the mess we made, otherwise "mount_all" in real init fails
 	unmount_system();
+	umount("/dev");
 
 	rc = execve("/init", argv, envp);
 
