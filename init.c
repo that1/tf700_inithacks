@@ -42,24 +42,24 @@ void mount_system()
 
 	fd = open("/sys/block/mmcblk0/mmcblk0p1/dev", O_RDONLY);
 	if (fd == -1) {
-		KLOG("<3>preinit: open /sys/block/mmcblk0/mmcblk0p1/dev failed");
+		KLOG("<3>preinit: open /sys/block/mmcblk0/mmcblk0p1/dev failed\n");
 		return;
 	}
 	if (read(fd, buf, sizeof(buf)) <= 0) {
-		KLOG("<3>preinit: read /sys/block/mmcblk0/mmcblk0p1/dev failed");
+		KLOG("<3>preinit: read /sys/block/mmcblk0/mmcblk0p1/dev failed\n");
 		return;
 	}
 	close(fd);
 	if (sscanf(buf, "%d:%d", &major, &minor) != 2) {
-		KLOG("<3>preinit: parsing /sys/block/mmcblk0/mmcblk0p1/dev failed");
+		KLOG("<3>preinit: parsing /sys/block/mmcblk0/mmcblk0p1/dev failed\n");
 		return;
 	}
 	if (mknod(PREINIT_SYSTEM_DEVNAME, S_IFBLK | 0600, makedev(major, minor)) != 0) {
-		KLOG("<3>preinit: mknod " PREINIT_SYSTEM_DEVNAME " failed");
+		KLOG("<3>preinit: mknod " PREINIT_SYSTEM_DEVNAME " failed\n");
 		return;
 	}
 	if (mount(PREINIT_SYSTEM_DEVNAME, "/system", "ext4", MS_RDONLY, NULL) != 0) {
-		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVNAME " failed");
+		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVNAME " failed\n");
 		return;
 	}
 }
@@ -87,7 +87,7 @@ void enable_verbose_printk()
 	if (fd != -1) {
 		write(fd, "7", 1);
 		close(fd);
-		KLOG("<7>preinit: verbose printk re-enabled.");
+		KLOG("<7>preinit: verbose printk re-enabled.\n");
 	}
 }
 
@@ -113,17 +113,17 @@ int main(int argc, char *argv[], char *envp[])
 	mount("sysfs", "/sys", "sysfs", 0, NULL);
 	klog_init();
 	
-	KLOG("<2>preinit: ########## starting ##########");
+	KLOG("<2>preinit: ########## starting ##########\n");
 
 	mount_system();
 
 	// a fully custom init can take over if it exists
 	if (stat("/system/boot/init", &s) == 0) {
-		KLOG("<2>preinit: starting /system/boot/init");
+		KLOG("<2>preinit: starting /system/boot/init\n");
 		// if this works, it takes over from here and execve never returns.
 		// if custom init wants to boot Android, it must unmount /system or modify init.rc scripts/fstab accordingly
 		rc = execve("/system/boot/init", argv, envp);
-		sprintf(buf, "<2>preinit: execve /system/boot/init failed: rc=%d errno=%d, resuming default boot.", rc, errno);
+		sprintf(buf, "<2>preinit: execve /system/boot/init failed: rc=%d errno=%d, resuming default boot.\n", rc, errno);
 		KLOG(buf);
 	}
 
@@ -134,19 +134,19 @@ int main(int argc, char *argv[], char *envp[])
 
 	// run pre-init hook as child and wait
 	if (stat("/system/boot/preinit", &s) == 0) {
-		KLOG("<2>preinit: starting /system/boot/preinit");
+		KLOG("<2>preinit: starting /system/boot/preinit\n");
 		int pid = fork();
 		if (pid == 0) {
 			rc = execve("/system/boot/preinit", argv, envp);
-			sprintf(buf, "<2>preinit: execve /system/boot/preinit failed: rc=%d errno=%d, resuming default boot.", rc, errno);
+			sprintf(buf, "<2>preinit: execve /system/boot/preinit failed: rc=%d errno=%d, resuming default boot.\n", rc, errno);
 			KLOG(buf);
 			return 42;
 		} else if (pid == -1) {
-			sprintf(buf, "<2>preinit: fork failed: errno=%d, resuming default boot.", errno);
+			sprintf(buf, "<2>preinit: fork failed: errno=%d, resuming default boot.\n", errno);
 			KLOG(buf);
 		} else {
 			wait(&rc);
-			sprintf(buf, "<6>preinit: /system/boot/preinit exit status=%d", rc);
+			sprintf(buf, "<6>preinit: /system/boot/preinit exit status=%d\n", rc);
 			KLOG(buf);
 		}
 	}
