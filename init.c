@@ -234,16 +234,17 @@ int main(int argc, char *argv[], char *envp[])
 		}
 	}
 
-	// unbind fb console to avoid crash when the console is blanked while Android is running
-	unbind_fbcon();
-	// and re-enable verbose printk for ram_console (/proc/last_kmsg)
-	enable_verbose_printk();
-
 chainload:
-	// but first clean up the mess we made, otherwise "mount_all" in real init fails
+	// clean up the mess we made, otherwise "mount_all" in real init fails
 	unmount("/system");
 //	unlink(PREINIT_SYSTEM_DEVNAME);
 	unmount("/dev");
+
+	// re-enable verbose printk for ram_console (/proc/last_kmsg)
+	enable_verbose_printk();
+
+	// unbind fb console to avoid crash when the console is blanked while Android is running
+	unbind_fbcon();
 
 	rc = execve("/init", argv, envp);
 
