@@ -71,10 +71,14 @@ void mount_system()
 	}
 }
 
-void unmount_system()
+void unmount(const char* target)
 {
-	umount("/system");
-//	unlink(PREINIT_SYSTEM_DEVNAME);
+	if (umount(target) != 0)
+	{
+		char buf[160];
+		sprintf(buf, "<2>preinit: unmount of %s failed, errno=%d\n", target, errno);
+		KLOG(buf);
+	}
 }
 
 void unbind_fbcon()
@@ -237,8 +241,9 @@ int main(int argc, char *argv[], char *envp[])
 
 chainload:
 	// but first clean up the mess we made, otherwise "mount_all" in real init fails
-	unmount_system();
-	umount("/dev");
+	unmount("/system");
+//	unlink(PREINIT_SYSTEM_DEVNAME);
+	unmount("/dev");
 
 	rc = execve("/init", argv, envp);
 
