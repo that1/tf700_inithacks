@@ -33,7 +33,7 @@ void klog_init(void)
 */
 #define KLOG(x) write(klog_fd, x, strlen(x))
 
-#define PREINIT_SYSTEM_DEVNAME "/dev/mmcblk0p1"
+#define PREINIT_SYSTEM_DEVPATH "/dev/mmcblk0p1"
 
 #define DETECTED_UNKNOWN 0
 #define DETECTED_EXT4 1
@@ -60,13 +60,13 @@ void mount_system()
 		KLOG("<3>preinit: parsing /sys/block/mmcblk0/mmcblk0p1/dev failed\n");
 		return;
 	}
-	if (mknod(PREINIT_SYSTEM_DEVNAME, S_IFBLK | 0600, makedev(major, minor)) != 0) {
-		KLOG("<3>preinit: mknod " PREINIT_SYSTEM_DEVNAME " failed\n");
+	if (mknod(PREINIT_SYSTEM_DEVPATH, S_IFBLK | 0600, makedev(major, minor)) != 0) {
+		KLOG("<3>preinit: mknod " PREINIT_SYSTEM_DEVPATH " failed\n");
 		return;
 	}
 */
-	if (mount(PREINIT_SYSTEM_DEVNAME, "/system", "ext4", MS_RDONLY, NULL) != 0) {
-		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVNAME " failed\n");
+	if (mount(PREINIT_SYSTEM_DEVPATH, "/system", "ext4", MS_RDONLY, NULL) != 0) {
+		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVPATH " failed\n");
 		return;
 	}
 }
@@ -102,12 +102,12 @@ void enable_verbose_printk()
 	}
 }
 
-int detect_filesystem(char *devname)
+int detect_filesystem(const char *devpath)
 {
 	char buf[2048];
 	int fd;
 
-	fd = open(devname, O_RDONLY);
+	fd = open(devpath, O_RDONLY);
 	if (fd == -1)
 		return -errno;
 
@@ -128,12 +128,12 @@ int detect_filesystem(char *devname)
 	return DETECTED_UNKNOWN;
 }
 
-void print_detect_filesystem(char *devname, char *name)
+void print_detect_filesystem(const char *devpath, const char *name, char *script, int buflen)
 {
 	int result;
-	char buf[160];
+	char buf[80], line[80];
 
-	result = detect_filesystem(devname);
+	result = detect_filesystem(devpath);
 	switch (result)
 	{
 		case DETECTED_EXT4:
@@ -145,7 +145,7 @@ void print_detect_filesystem(char *devname, char *name)
 			break;
 
 		case DETECTED_UNKNOWN:
-			strcpy(buf, "unknown filesystem");
+			strcpy(buf, "unknown");
 			break;
 
 		case -ENOENT:
@@ -157,16 +157,38 @@ void print_detect_filesystem(char *devname, char *name)
 			break;
 	}
 
+	const char* devname = devpath + 5;	/* HACK: skip "/dev/" */
+	if (result > 0)
+		sprintf(line, "FS_%s=%s\n", devname, buf);
+	else
+		sprintf(line, "# error for %s: %s\n", devname, buf);
+	strlcat(script, line, buflen);
+
 	printf("%-16s %-50s -> %s\n", devname, name, buf);
 }
 
-void print_detected_filesystems()
+void detect_filesystems()
 {
+	char script[1024];
+	int buflen = sizeof(script);
+	int fd;
+
 	printf("\n\nDetecting filesystems...\n");
-	print_detect_filesystem("/dev/mmcblk0p8", "internal /data (UDA)");
-	print_detect_filesystem("/dev/mmcblk1p2", "external /data on microSD (for Data2SD/ROM2SD)");
-	print_detect_filesystem("/dev/mmcblk1p3", "external /system on microSD (for ROM2SD)");
+	print_detect_filesystem("/dev/mmcblk0p8", "/data on internal (UDA)", script, buflen);
+	print_detect_filesystem("/dev/mmcblk1p2", "/data on microSD (for Data2SD/ROM2SD)", script, buflen);
+	print_detect_filesystem("/dev/mmcblk1p3", "/system on microSD (for ROM2SD)", script, buflen);
 	printf("\n\n");
+
+	fd = open("/fs_detected.sh", O_CREAT | O_WRONLY, 0644);
+	if (fd != -1)
+	{
+		write(fd, script, strlen(script));
+		close(fd);
+	}
+	else
+	{
+		KLOG("<2>preinit: failed to write /fs_detected.sh\n");
+	}
 }
 
 int main(int argc, char *argv[], char *envp[])
@@ -179,19 +201,12 @@ int main(int argc, char *argv[], char *envp[])
 		argv[0] = "/init";
 		goto chainload;
 	}
-/*
-	printf("hello world, this is that-init. my pid = %d\n", getpid());
-	int fd = open("log.txt", O_WRONLY | O_CREAT, 0600);
-	if (fd != -1) {
-		write(fd, "hello\n", 6);
-		close(fd);
-	}
-*/
+
 	mount("proc", "/proc", "proc", 0, NULL);
 	mount("sysfs", "/sys", "sysfs", 0, NULL);
 	mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
-	klog_init();
 
+	klog_init();
 	KLOG("<2>preinit: ########## starting ##########\n");
 
 	mount_system();
@@ -211,9 +226,7 @@ int main(int argc, char *argv[], char *envp[])
 	// this rename is essential, or the symlink sbin/ueventd must be changed!
 	rename("init-android", "init");
 
-	// TODO: detect partition types and switch ramdisk contents accordingly
-	print_detected_filesystems();
-	// TODO: detect ROM type by parsing build.prop
+	detect_filesystems();
 
 	// run pre-init hook as child and wait
 	if (stat("/system/boot/preinit", &s) == 0) {
@@ -237,7 +250,7 @@ int main(int argc, char *argv[], char *envp[])
 chainload:
 	// clean up the mess we made, otherwise "mount_all" in real init fails
 	unmount("/system");
-//	unlink(PREINIT_SYSTEM_DEVNAME);
+//	unlink(PREINIT_SYSTEM_DEVPATH);
 	unmount("/dev");
 
 	// re-enable verbose printk for ram_console (/proc/last_kmsg)
