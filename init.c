@@ -202,12 +202,12 @@ int main(int argc, char *argv[], char *envp[])
 		goto chainload;
 	}
 
+	klog_init();
+	KLOG("<2>preinit: ########## starting ##########\n");
+
 	mount("proc", "/proc", "proc", 0, NULL);
 	mount("sysfs", "/sys", "sysfs", 0, NULL);
 	mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
-
-	klog_init();
-	KLOG("<2>preinit: ########## starting ##########\n");
 
 	mount_system();
 
