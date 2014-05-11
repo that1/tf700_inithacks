@@ -179,7 +179,7 @@ void detect_filesystems()
 	print_detect_filesystem("/dev/mmcblk1p3", "/system on microSD (for ROM2SD)", script, buflen);
 	printf("\n\n");
 
-	fd = open("/fs_detected.sh", O_CREAT | O_WRONLY, 0644);
+	fd = open("/fs_detected", O_CREAT | O_WRONLY, 0644);
 	if (fd != -1)
 	{
 		write(fd, script, strlen(script));
@@ -187,7 +187,7 @@ void detect_filesystems()
 	}
 	else
 	{
-		KLOG("<2>preinit: failed to write /fs_detected.sh\n");
+		KLOG("<2>preinit: failed to write /fs_detected\n");
 	}
 }
 
