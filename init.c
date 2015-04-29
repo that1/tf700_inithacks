@@ -186,6 +186,7 @@ void detect_filesystems()
 	int fd;
 
 	printf("\n\nDetecting filesystems...\n");
+	memset(script, '\0', sizeof(script));
         print_detect_filesystem("/dev/mmcblk0p1", "/system on internal (UDA)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk0p8", "/data on internal (UDA)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk1p2", "/data on microSD (for Data2SD/ROM2SD)", script, buflen);

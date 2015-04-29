@@ -1,0 +1,5 @@
+?FS_mmcblk0p1=f2fs
+FS_mmcblk0p8=f2fs
+# error for mmcblk1p2: not present
+FS_mmcblk0p2=f2fs
+# error for mmcblk1p3: not present
