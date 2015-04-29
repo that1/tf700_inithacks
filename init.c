@@ -39,6 +39,8 @@ void klog_init(void)
 #define DETECTED_EXT4 1
 #define DETECTED_F2FS 2
 
+int detect_filesystem(const char *devpath);
+
 void mount_system()
 {
 /*
@@ -65,7 +67,17 @@ void mount_system()
 		return;
 	}
 */
-	if (mount(PREINIT_SYSTEM_DEVPATH, "/system", "ext4", MS_RDONLY, NULL) != 0) {
+	int result
+	result = detect_filesystem(PREINIT_SYSTEM_DEVPATH);
+
+	char buf[80];
+	if (result == DETECTED_F2FS) {
+		strcpy(buf, "f2fs");
+        } else {
+		strcpy(buf, "ext4");
+	}
+
+	if (mount(PREINIT_SYSTEM_DEVPATH, "/system", buf, MS_RDONLY, NULL) != 0) {
 		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVPATH " failed\n");
 		return;
 	}
@@ -174,8 +186,11 @@ void detect_filesystems()
 	int fd;
 
 	printf("\n\nDetecting filesystems...\n");
+	memset(script, '\0', sizeof(script));
+        print_detect_filesystem("/dev/mmcblk0p1", "/system on internal (UDA)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk0p8", "/data on internal (UDA)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk1p2", "/data on microSD (for Data2SD/ROM2SD)", script, buflen);
+        print_detect_filesystem("/dev/mmcblk0p2", "/cache on internal (UDA)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk1p3", "/system on microSD (for ROM2SD)", script, buflen);
 	printf("\n\n");
 
