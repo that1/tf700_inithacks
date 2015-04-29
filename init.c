@@ -39,6 +39,31 @@ void klog_init(void)
 #define DETECTED_EXT4 1
 #define DETECTED_F2FS 2
 
+int detect_filesystem(const char *devpath)
+{
+	char buf[2048];
+
+	int fd = open(devpath, O_RDONLY);
+	if (fd == -1)
+		return -errno;
+
+	memset(buf, 0, sizeof(buf));
+	if (!read(fd, buf, sizeof(buf)))
+	{
+		close(fd);
+		return -errno;
+	}
+	close(fd);
+
+	if (!memcmp(buf+1024+0x38, "\x53\xef", 2))
+		return DETECTED_EXT4;
+
+	if (!memcmp(buf+1024, "\x10\x20\xf5\xf2", 4))
+		return DETECTED_F2FS;
+
+	return DETECTED_UNKNOWN;
+}
+
 void mount_system()
 {
 /*
@@ -65,7 +90,9 @@ void mount_system()
 		return;
 	}
 */
-	if (mount(PREINIT_SYSTEM_DEVPATH, "/system", "ext4", MS_RDONLY, NULL) != 0) {
+	int detected = detect_filesystem(PREINIT_SYSTEM_DEVPATH);
+	const char* fstype = detected == DETECTED_F2FS ? "f2fs" : "ext4";
+	if (mount(PREINIT_SYSTEM_DEVPATH, "/system", fstype, MS_RDONLY, NULL) != 0) {
 		KLOG("<3>preinit: mount " PREINIT_SYSTEM_DEVPATH " failed\n");
 		return;
 	}
@@ -83,8 +110,7 @@ void unmount(const char* target)
 
 void unbind_fbcon()
 {
-	int fd;
-	fd = open("/sys/class/vtconsole/vtcon1/bind", O_WRONLY);
+	int fd = open("/sys/class/vtconsole/vtcon1/bind", O_WRONLY);
 	if (fd != -1) {
 		write(fd, "0", 1);
 		close(fd);
@@ -93,8 +119,7 @@ void unbind_fbcon()
 
 void enable_verbose_printk()
 {
-	int fd;
-	fd = open("/proc/sys/kernel/printk", O_WRONLY);
+	int fd = open("/proc/sys/kernel/printk", O_WRONLY);
 	if (fd != -1) {
 		write(fd, "7", 1);
 		close(fd);
@@ -102,38 +127,11 @@ void enable_verbose_printk()
 	}
 }
 
-int detect_filesystem(const char *devpath)
-{
-	char buf[2048];
-	int fd;
-
-	fd = open(devpath, O_RDONLY);
-	if (fd == -1)
-		return -errno;
-
-	memset(buf, 0, sizeof(buf));
-	if (!read(fd, buf, sizeof(buf)))
-	{
-		close(fd);
-		return -errno;
-	}
-	close(fd);
-
-	if (!memcmp(buf+1024+0x38, "\x53\xef", 2))
-		return DETECTED_EXT4;
-
-	if (!memcmp(buf+1024, "\x10\x20\xf5\xf2", 4))
-		return DETECTED_F2FS;
-
-	return DETECTED_UNKNOWN;
-}
-
 void print_detect_filesystem(const char *devpath, const char *name, char *script, int buflen)
 {
-	int result;
 	char buf[80], line[80];
 
-	result = detect_filesystem(devpath);
+	int result = detect_filesystem(devpath);
 	switch (result)
 	{
 		case DETECTED_EXT4:
@@ -171,15 +169,16 @@ void detect_filesystems()
 {
 	char script[1024];
 	int buflen = sizeof(script);
-	int fd;
 
 	printf("\n\nDetecting filesystems...\n");
+	print_detect_filesystem("/dev/mmcblk0p1", "/system on internal (APP)", script, buflen);
+	print_detect_filesystem("/dev/mmcblk0p2", "/cache on internal (CAC)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk0p8", "/data on internal (UDA)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk1p2", "/data on microSD (for Data2SD/ROM2SD)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk1p3", "/system on microSD (for ROM2SD)", script, buflen);
 	printf("\n\n");
 
-	fd = open("/fs_detected", O_CREAT | O_WRONLY, 0644);
+	int fd = open("/fs_detected", O_CREAT | O_WRONLY, 0644);
 	if (fd != -1)
 	{
 		write(fd, script, strlen(script));
