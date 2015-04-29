@@ -171,6 +171,7 @@ void detect_filesystems()
 	int buflen = sizeof(script);
 
 	printf("\n\nDetecting filesystems...\n");
+	memset(script, 0, sizeof(script));
 	print_detect_filesystem("/dev/mmcblk0p1", "/system on internal (APP)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk0p2", "/cache on internal (CAC)", script, buflen);
 	print_detect_filesystem("/dev/mmcblk0p8", "/data on internal (UDA)", script, buflen);
